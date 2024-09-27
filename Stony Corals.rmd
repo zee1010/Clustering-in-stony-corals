@@ -1,0 +1,411 @@
+6210 Assignment 5
+Zuhaa Ali
+2022-12-09
+#installing required packages
+#install.packages("tidyverse")
+library(tidyverse)
+
+#install.packages(tidyr)
+library(tidyr)
+
+#install.packages("stringi")
+library(stringi)
+
+#install.packages("ape")
+library(ape)
+
+#install.packages("RSQLite")
+library(RSQLite)
+
+#install.packages("phangorn")
+library(phangorn)
+
+#install.packages("rentrez")
+library(rentrez)
+
+#Package from Bioconductor:
+#To install Bioconductor packages
+#install.packages("BiocManager")
+library(BiocManager)
+
+#BiocManager::install(c("Biostrings", "muscle", "msa", "DECIPHER"))
+library(Biostrings)
+library(muscle)
+library(DECIPHER)
+
+#install.packages("seqinr")
+library(seqinr)
+
+#install.packages("dendextend")
+library(dendextend)
+
+#install.packages("ggplot2")
+library(ggplot2)
+library(rmarkdown)
+
+#install.packages("geiger")
+library(geiger)
+1.Introduction
+#Corals contain 95000 different species and account for 5% of the worlds known species (Dishon et al., 2020). There are two different types, hard (known as scleractinian and stony coral) and soft (known as Alcyonacea and ahermatypic coral) corals. Stony corals are considered habitat engineers (Dishon et al., 2020), making habitable environments for various marine invertebrates and fish. They have a symbiotic relationship with photosynthesizing algae, which provides food and helps coral survive(Raharinirina et al., 2017). They employ various life-history strategies in response to environmental disturbances which include weedy, stress tolerant, competitive and generalist traits (Darling et al.,2012). Weedy includes small corals with high growth and brooding reproduction turnover rates and they opportunistically colonize recently disturbed habitats. Generalists do well in habitats where there is limited competition, low stress and disturbance (Darling et al.,2012). Stress tolerant do well in harsh environments, whereas competitive are efficient at using resources and occupying productive environments (Darling et al.,2012). Historically, many invertebrate lineages became extinct after the last major extinction event, Cretaceous-Tertiary/K-T (66Myr) however majority of scleractinian corals survived (Dishon et al., 2020). It has been proposed that we are following similar trajectories to past extinction events, with background extinction events 100 times greater than before, therefore, it is crucial to study and monitor stony corals as they can help describe past and predict future extinction events(Dishon et al., 2020).
+#To determine evolution similarity, hierarchical clustering is employed to cluster genes with similar expression often resulting in a phylogentic tree. There are a wide range of hierarchical clustering techniques which may be used including single, average, complete and ward. Single clustering uses the minimum distance between members, average uses the mean, complete use the maximum and in ward it is the average squared distance of a point to its cluster centroid after merging the two clusters (Clustering. (n.d.). There are also various models of DNA evolution that can be used to determine the distance matrix, some of these include “TV” ,“TS” ( These are the numbers of transitions and transversions), “JC69”( assumes that all substitutions (i.e. a change of a base by another one) have the same probability.), “F81”( relaxing the assumption of equal base frequencies) etc. Each model is fitted to a particular dataset, and this can be determined by model testing. (Paradis & Schliep, 2019). Pagels lambda parameter estimates phylogenetic conservatism for traits(Kamilar & Cooper, 2013). Values for lambda range from 0 to 1 where 1 indicates closely related species exhibit similar traits and 0 indicates indicates that distant relatives rather than close exhibit similar traits or they are randomly distributed (Kamilar & Cooper, 2013).
+#While it is known that currently 1/3rd of corals are nearing extinction due to global warming and human induced impacts (Darling et al.,2012). We do not know if evolutionarily similar species are at the same risk of extinction or whether they employ similar life history strategies to overcome anthropogenic effects. In this exploratory question we use a single linkage clustering technique to observe similarity between species in a dendrogram, their status on the IUCN red list and whether there is any correlation or trends between conservation status and life history traits. For this study we will use Cytochrome c oxidase subunit I(COI) gene which has been cited in literature widely to infer phylogenies in corals to determine similarity (Budd et al., 2010).
+2.Description of Data Set
+#Three different databases were used for this project. The gene data for cytochrome c oxidase subunit 1 (COI) for stony corals was obtained on 10th December, 2022 from NCBI (nuccore), using the function FetchFasta files. The parameters specified were “Scleractinia”[ORGN] indicating entries for both scientific and common names, COI[Gene] with a length of 600-1000 base pairs to prevent whole genome entries from being obtained. This dataset contained 1203 observations with 2 columns, title and sequence. The title column was later parsed to obtain species name. The key variables we are interested in are name of the species and sequence of COI. In figure 1 majority of our data falls between 600 to 750 base pairs, this is an indication that our data is accurate and is unlikely to contain whole genomes as COI is approximately 600-750 base pairs. Conservation status of stony corals was obtained from IUCN red list database((IUCN red list of threatened species, n.d.) on 10th December, 2022. This dataset had 822 observations with 23 variables, of which required for our analysis were scientific name and red list category. From figure 2 it is observed that our data is slightly unbalanced with majority of species being LC(least concerned), or NT(not threatened). Unfortunately, when merged, not all species had a conservation status available and therefore we will have to work with an unbalanced data set. The last set used was various investment strategies used by corals in growth, reproduction, and survivorship that differentiate species. This dataset was obtained from coral traits website(Coral Traits, n.d.) on Dec 12th , 2022. It contains 367 observations with 5 variables. The key variables required were specie name and value. From figure 3 it is observed that our data is slightly unbalanced with majority of species being either stress tolerant or competitive but again due to a time constrant and limited resources our analysis will be conducted on this data set.
+3.Code Section 1 – Data Acquisition, Exploration, Filtering, and Quality Control
+#function to fetch fasta files required 
+FetchFastaFiles <- function(searchTerm, seqsPerFile = 100, fastaFileName) {
+  
+  # This function will fetch FASTA files from NCBI nuccore based on a provided search term.
+  # searchTerm = character vector containing Entrez search term
+  # seqsPerFile = number of sequences to write to each FASTA file
+  # fastaFileName = character vector containing name you want to give to the FASTA files you are fetching
+  
+  # Initial search for finding maximum number of hits
+  search1 <- entrez_search(db = "nuccore", term = searchTerm)
+  # Second search for obtaining max number of hits and their IDs
+  search2 <- entrez_search(db = "nuccore", term = searchTerm, retmax = search1$count, use_history = T)
+  
+  # Fetch the sequences in FASTA format using the web_history object.
+  for (start_rec in seq(0, search2$retmax, seqsPerFile)) {
+    fname <- paste(fastaFileName, start_rec, ".fasta", sep = "")
+    recs <- entrez_fetch(db = "nuccore", web_history = search2$web_history, rettype = "fasta", retstart = start_rec, retmax = seqsPerFile)
+    write(recs, fname)
+    print(paste("Wrote records to ", fname, sep = ""))
+  }
+  
+  return(search2)
+  
+}
+
+
+
+#function merge the all the fasta files together
+MergeFastaFiles <- function(filePattern) {
+  
+  # This function merges multiple FASTA files into one dataframe.
+  
+  # filePattern = Character vector containing common pattern in FASTA file names
+  
+  # Read the FASTA files in.
+  fastaFiles <- list.files(pattern = filePattern)
+  l_fastaFiles <- lapply(fastaFiles, readDNAStringSet)
+  
+  # Convert them into dataframes.
+  l_dfFastaFiles <- lapply(l_fastaFiles, function(x) data.frame(Title = names(x), Sequence = paste(x) ))
+  
+  # Combine the list of dataframes into one dataframe.
+  stony_COI <- do.call("rbind", l_dfFastaFiles)
+  
+  return(stony_COI)
+  
+}
+
+#Using the function to fetch fasta files
+stony_COI<-FetchFastaFiles("Scleractinia[ORGN] AND COI[Gene]  AND 600:1000[SLEN]  ", 1000,"stony_COI")
+#merging Fasta files
+stony_COI<-MergeFastaFiles("stony_COI*")
+
+#Obtaining specie name and sequence from title
+stony_COI$specie_name <- word(stony_COI$Title, 2L, 3L)
+#Rearranging columns so species name comes after title, followed by sequence
+stony_COI <- stony_COI[, c("Title", "specie_name", "Sequence")]
+#filter to retain specie name and sequence only
+stony_COI<-stony_COI%>%select('specie_name', 'Sequence')
+
+
+#Obtaining preferred life history strategy data of corals
+strategy<-read_csv(file.choose())
+#selecting required variables 
+#creating acronyms for life history startegy so they can be added to our dendrogram later.
+
+strategy<-strategy%>% select('specie_name', 'value')%>% mutate(
+  valueAcr = case_when(
+    value== "stress-tolerant" ~ "ST",
+    value== "competitive" ~ "C", 
+    value== "weedy" ~"W",
+    value== "generalist" ~"G"
+  )
+) 
+#merging sequence data with life history strategy (merged using species name) 
+strategy<-merge(stony_COI, strategy)
+
+#obtaining status from IUCN redlist
+status<-read_csv(file.choose())
+#selecting required columns from our data frame
+#remnaming scientific name column to specie_name for easy merging
+#to add acronyms of redlist status so they can be displayed on our dendogram
+status<- status%>% select('scientificName', 'redlistCategory')%>%rename_with(.cols =1, ~  'specie_name') %>% mutate(
+  Red_List_Acr = case_when(
+    redlistCategory== "Data Deficient" ~ "DD",
+    redlistCategory== "Least Concern" ~ "LC", 
+    redlistCategory== "Near Threatened" ~"NT",
+    redlistCategory== "Vulnerable" ~ "VU",
+    redlistCategory== "Endangered" ~ "EN",
+    redlistCategory== "Critically Endangered" ~ "CR",
+    redlistCategory== "Extinct In The Wild" ~ "EW",
+    redlistCategory== "Extinct" ~ "EX",
+    redlistCategory== "Not evaluated" ~ "NE"
+    )
+)
+#merging status data to our original data frame
+COI_status<- merge(strategy, status)
+#removing unrequired dataframes to keep environment clean
+remove(status, stony_COI, strategy)
+#converting red list acronyms to categorical variables for easier use later
+COI_status$Red_List_Acr<-as.factor(COI_status$Red_List_Acr)
+#removing duplicate sequences
+COI_status<-COI_status[!duplicated(COI_status$Sequence), ]
+#only keeping 1 species name per row and removing duplicates
+COI_status<-(COI_status[!duplicated(COI_status$specie_name), ])
+##datachecks 
+summary(COI_status)
+##  specie_name          Sequence            value             valueAcr        
+##  Length:79          Length:79          Length:79          Length:79         
+##  Class :character   Class :character   Class :character   Class :character  
+##  Mode  :character   Mode  :character   Mode  :character   Mode  :character  
+##                                                                             
+##  redlistCategory    Red_List_Acr
+##  Length:79          CR: 7       
+##  Class :character   LC:41       
+##  Mode  :character   NT:23       
+##                     VU: 8
+head(COI_status)
+##              specie_name
+## 1  Acanthastrea echinata
+## 25       Acropora aspera
+## 27     Acropora cerealis
+## 28  Acropora cervicornis
+## 29     Acropora cytherea
+## 31   Acropora divaricata
+##                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Sequence
+## 1  TTTTTGGTGTTGGAGCAGGTCTAATTGGGACTGCTTTTAGTATGCTTATACGATTGGAGCTTTCTGCGCCAGGCGCTATGTTAGGTGATGATCATCTTTATAATGTAATTGTAACAGCACATGCTTTTATTATGATTTTTTTTTTAGTAATGCCGGTTATGATTGGGGGGTTTGGAAACTGGCTAGTGCCATTATATATTGGGGCACCGGATATGGCGTTCCCCCGATTAAATAATATTAGTTTTTGGTTATTACCACCTGCTTTGTTTTTATTGTTAGGTTCTGCTTTTGTTGAACAAGGCGCAGGAACGGGATGAACGGTTTATCCTCCTCTTTCTGATATTTATGCGCACTCTGGGGGTTCTGTTGACATGGTTATTTTTAGTCTTCATTTGGCTGGGGTTTCTTCTATCTTAGGAGCAATAAACTTTATTACAACCATTTTCAACATGCGAGCCCCTGGTGTTTCTTTTAATAGAATGCCTTTGTTTGTTTGGTCTATTTTAATAACTGCTTTTTTATTACTTTTATCTTTGCCTGTATTAGCGGGTGCAATTACTATGTTATTAACAGATCGAAATTTTAATACAACTTTTTTTGATCCTTCTGGAGGTGGAGATCCTATTTTGTTCCAACATTTATTTTGGTTTTTTGGGCATCCTGAAGTTTATATTTTAATTTTGCCTGGTTTTGG
+## 25                                      ACGTTATATTTAGTCTTTGGGATTGGGGCAGGCATGATTGGCACGGCCTTCAGTATGTTAATAAGATTAGAGCTCTCGGCTCCGGGGGCTATGCTAGGAGACGATCATCTTTATAATGTAATTGTTACGGCACATGCTTTTATTATGATTTTTTTTTTGGTTATGCCAGTGATGATAGGGGGGTTTGGAAATTGGTTGGTTCCACTATATATTGGTGCTCCCGACATGGCCTTCCCCCGGCTTAATAATATTAGTTTTTGGTTGTTGCCTCCTGCTCTAATATTATTATTAGGCTCCGCTTTTGTTGAACAAGGAGTTGGTACCGGGTGGACGGTGTATCCTCCTCTATCGAGCATCCAGGCTCACTCTGGGGGGGCGGTGGACATGGCTATTTTTAGCCTTCACTTAGCTGGGGTGTCTTCGATTTTGGGTGCAATGAATTTTATAACAACTATATTGAATATGCGGGCCCCTGGGATGACATTAAATAAAATGCCATTGTTTGTGTGGTCTATCTTGATTACTGCTTTTTTATTATTACTATCTTTGCCAGTACTAGCGGGGGCGATAACCATGCTTTTAACGGATAGAAATTTTAATACCACTTTTTTTGATCCCGCCGGAGGGGGAGACCCAATTTTATTTCAGCATTTGTTT
+## 27                                      ACGTTATATTTAGTCTTTGGGATTGGGGCAGGCATGATTGGCACGGCCTTCAGTATGTTAATAAGATTAGAGCTCTCGGCCCCGGGGGCTATGCTAGGAGACGATCATCTTTATAATGTAATTGTTACGGCACATGCTTTTATTATGATTTTTTTTTTGGTTATGCCAGTGATGATAGGGGGGTTTGGAAATTGGTTGGTTCCACTATATATTGGTGCTCCCGACATGGCCTTCCCCCGGCTTAATAATATTAGTTTTTGGTTGTTGCCTCCTGCTCTAATATTATTATTAGGCTCCGCTTTTGTTGAACAAGGAGTTGGTACCGGGTGGACGGTGTATCCTCCTCTATCGAGCATCCAGGCTCACTCTGGGGGGGCGGTGGACATGGCTATTTTTAGCCTTCACTTAGCTGGGGTGTCTTCGATTTTGGGTGCAATGAATTTTATAACAACTATATTGAATATGCGGGCCCCCGGGATGACATTAAATAAAATGCCATTGTTTGTGTGGTCTATCTTGATTACTGCCTTTTTATTATTACTATCTTTGCCAGTACTAGCGGGGGCGATAACCATGCTTTTAACGGATAGAAATTTTAATACCACTTTTTTTGATCCCGCCGGAGGGGGAGACCCAATTTTATTTCAGCATTTGTTT
+## 28                                     TACGTTATATTTAGTCTTTGGGATTGGGGCAGGCATGATTGGCACGGCCTTCAGTATGTTAATAAGATTAGAGCTCTCGGCTCCGGGGGCTATGCTAGGAGACGATCATCTTTATAATGTAATTGTTACGGCACATGCTTTTATTATGATTTTTTTTTTGGTTATGCCAGTGATGATAGGGGGGTTTGGAAATTGGTTGGTTCCACTATATATTGGTGCTCCCGACATGGCCTTCCCCCGGCTTAATAATATTAGTTTTTGGTTGTTGCCTCCTGCTCTAATATTGTTATTAGGCTCCGCTTTTGTTGAACAAGGAGTTGGTACCGGGTGGACGGTGTATCCTCCTCTATCGAGCATCCAGGCTCACTCTGGGGGGGCGGTGGACATGGCTATTTTTAGCCTTCACTTAGCTGGGGTGTCTTCGATTTTGGGTGCAATGAATTTTATAACAACTATATTGAATATGCGGGCCCCTGGGATGACATTAAATAAAATGCCATTGTTTGTGTGGTCTATCTTGATTACTGCTTTTTTATTATTACTACCTTTGCCAGTACTAGCGGGGGCGATAACCATGCTTTTAACGGATAGAAATTTTAATACCACTTTTTTTGATCCCGCCGGAGGGGGAGACCCAATTTTATTTCAGCATTTGTTT
+## 29                                     TACGTTATATTTAGTCTTTGGGATTGGGGCAGGCATGATTGGCACGGCCTTCAGTATGTTAATAAGATTAGAGCTCTCGGCTCCGGGGGCTATGCTAGGAGACGATCATCTTTATAATGTAATTGTTACGGCACATTCTTTTATTATGATTTTTTTTTTGGTTATGCCAGTGATGATAGGGGGGTTTGGAAATTGGTTGGTTCCACTATATATTGGTGCTCCCGACATGGCCTTCCCCCGGCTTAATAATATTAGTTTTTGGTTGTTGCCTCCTGCTCTAATATTATTATTAGGCTCCGCTTTTGTTGAACAAGGAGTTGGTACCGGGTGGACGGTGTATCCTCCTCTATCGAGCATCCAGGCTCACTCTGGGGGGGCGGTGGACATGGCTATTTTTAGCCTTCACTTAGCTGGGGTGTCTTCGATTTTGGGTGCAATGAATTTTATAACAACTATATTGAATATGCGGGCCCCTGGGATGACATTAAATAAAATGCCATTGTTTGTGTGGTCTATCTTGATTACTGCTTTTTTATTATTACTATCTTTGCCAGTACTAGCGGGGGCGATAACCATGCTTTTAACGGATAGAAATTTTAATACCACTTTTTTTGATCCCGCCGGAGGGGGAGACCCAATTTTATTTCAGCATTTGTTT
+## 31                                      ACGTTATATTTAGTCTTTGGGATTGGGGCAGGCATGATTGGCACGGCCTTCAGTATGTTAATAAGATTAGAGCTCTCGGCTCCGGGGGCTATGCTAGGAGACGATCATCTTTATAATGTAATTGTTACGGCACATGCTTTTATTATAATTTTTTTTTTGGTTATGCCAGTGATGATAGGGGGGTTTGGAAATTGGTTGGTTCCACTATATATTGGTGCTCCCGACATGGCCTTCCCCCGGCTTAATAATATTAGTTTTTGGTTGTTGCCTCCTGCTCTAATATTATTATTAGGCTCCGCTTTTGTTGAACAAGGAGTTGGTACCGGGTGGACGGTGTATCCTCCTCTATCGAGCATCCAGGCTCACTCTGGGGGGGCGGTGGACATGGCTATTTTTAGCCTTCACTTAGCTGGGGTGTCTTCGATTTTGGGTGCAATGAATTTTATAACAACTATATTGAATATGCGGGCCCCTGGGATGACATTAAATAAAATGCCATTGTTTGTGTGGTCTATCTTGATTACTGCTTTTTTATTATTACTATCTTTGCCAGTACTAGCGGGGGCGATAACCATGCTTTTAACGGATAGAAATTTTAATACCACTTTTTTTGATCCCGCCGGAGGGGGAGACCCAATTTTATTTCAGCATTTGTTT
+##              value valueAcr       redlistCategory Red_List_Acr
+## 1  stress-tolerant       ST         Least Concern           LC
+## 25     competitive        C            Vulnerable           VU
+## 27     competitive        C         Least Concern           LC
+## 28     competitive        C Critically Endangered           CR
+## 29     competitive        C         Least Concern           LC
+## 31     competitive        C       Near Threatened           NT
+#To see wide range of sequence lengths for COI we will create a histogram with sequence length on the x-axis and frequency on y =-axis
+hist(nchar(COI_status$Sequence), xlab="Sequence length", ylab= "Frequency", main="Fig 1:Frequency for COI sequence lengths", col="steelblue")
+ 
+Figure1:Frequency of the lengths(base pairs) of COI sequences
+#To see wide range of status for coral species and determine if it is unbalanced
+ggplot(COI_status, aes(x=Red_List_Acr))+
+  geom_bar(fill="steelblue")+ labs(title="Fig 2: Count of species in each Red List Category", x=("Red List Category"))+
+  theme_classic()
+ 
+Figure2: Count of species in red list categories, each of critically endangered(CR), least concern(LC), not threatened(NT) and vulnerable (VU)
+#to see wide range of life history strategies of corals and see if data is unbalanced.
+ggplot(COI_status, aes(x=value))+
+  geom_bar(fill="steelblue")+ labs(title="Fig 3: Count of investment strategy of Corals", x=("life history strategy"))+
+  theme_classic()
+ 
+Figure3: Count of life history strategy for corals, each of competitive(C), generalist(G), 
+Stress tolerant(T) and weedy(W)
+4.Main Software Tools Description
+#The main tool used for this assignment was phylogenetic analysis to determine evolutionary similarity between species. A wide variety of packages were used such as muscle (Edgar, 2004) to align DNA sequences, ape (Pardis & Schliep , 2019) to determine the distance matrix, geiger to obtain pagels lambda parameter(Pennel et al., 2014), phangorn (Schliep et al., 2017) to choose an appropriate model for the distance matrix as well as dendextend(Galili, 2015) which works with base dendrograms in r to increase appeal, and adjust parameters of trees. These tools are required for robust phylogenetic analysis. Although, the tools themselves are very accurate, weaknesses lie in the phylogenetic analysis itself. It involves many arbitrary decisions regarding model and method choice along with how to deal with missing data and can vary from study to study. This may reduce repeatability and comparison between studies. An example of this is model choice that is used in hclust, there are many models to choose from and depending on statistical tests run, it could lead to a differenet choices and different dendrograms. There are a wide range of alternatives that can be use for phylogenetic analysis these include phangorn, ggtree and phytools to build dendrograms. We used base dendrograms in r with a combination of denextend for simplicity and ease of use. There are also alternative packages to determine pagels lambda parameter however most of them such as phytools focus on continous traits rather than discrete and therefore we used geiger. For our analysis, two vingettes were combined to determine our model for clustering, this included the vignette from Schliep, 2022 where he conducted model testing to determine the best model and how to use phangorn. The second vingette used was how to interpret AICc scores using model selection by Mazerolle, 2020. A wide variety of vignettes and were combined for denextend to output the final dendrogram, this included adding additional labels and colors, however the main vingette used was by (Galili, 2022) . ### 5.Code Section 2 – Main Analysis
+#defining the amount of missing data we will accept for this analysis
+missing.data <- 0.01
+#defining the amount of sequence length variability we will accept for our analysis
+length.var <- 50
+#removing specified number of Ns and -'s if there are any
+COI_status <- COI_status %>% mutate(Sequence = str_remove_all(Sequence, "^N+|N+$|-")) %>%
+  filter(str_count(Sequence, "N") <= (missing.data * str_count(Sequence))) %>%
+  filter(str_count(Sequence) >= median(str_count(Sequence)) - length.var & str_count(Sequence) <= median(str_count(Sequence)) + length.var)
+#converting format, to be suitable for bioconductor packages, and adding names attribute for the sequences
+COI_status$Sequence <- DNAStringSet(COI_status$Sequence)
+names(COI_status$Sequence) <- COI_status$specie_name
+#formatting our sequences so the can be aligned in the next step
+COI_status$Sequence <- DNAStringSet(COI_status$Sequence)
+#aligning sequences, using default settings.
+COI_status.alignment <- DNAStringSet(muscle::muscle(COI_status$Sequence))
+#can view sequence in bowser
+BrowseSeqs(COI_status.alignment)
+#converting data class using a function from ape package. We are doing this because we want to use a distance matrix for clustering.
+dnaBin.COI_status <- as.DNAbin(COI_status.alignment)
+##Model testing
+data=as.phyDat(dnaBin.COI_status)
+#Computing possible models that
+mt<-modelTest(data, model=c("JC", "F81", "K80", "K81", "TIM", "TVM"))
+#computing delta AICc to get best model
+minAICc<-min(mt$AICc)
+mt<-mt%>% mutate(
+  DELTAAICc =  AICc-(minAICc))
+#viewing results for our model test
+mt
+##         Model  df    logLik      AIC          AICw     AICc         AICcw
+## 1          JC 129 -3958.689 8175.378 1.469183e-180 8232.614 1.007019e-178
+## 2        JC+I 130 -3785.460 7830.921 9.228459e-106 7889.143 3.862122e-104
+## 3     JC+G(4) 130 -3769.440 7798.881  8.365349e-99 7857.103  3.500910e-97
+## 4   JC+G(4)+I 131 -3767.981 7797.962  1.324243e-98 7857.181  3.366497e-97
+## 5         F81 132 -3920.084 8104.168 4.268846e-165 8164.394 6.558467e-164
+## 6       F81+I 133 -3741.084 7748.168  8.603481e-88 7809.412  7.947002e-87
+## 7    F81+G(4) 133 -3723.538 7713.076  3.586437e-80 7774.320  3.312777e-79
+## 8  F81+G(4)+I 134 -3722.214 7712.428  4.960425e-80 7774.700  2.740499e-79
+## 9         K80 130 -3820.836 7901.672 3.995759e-121 7959.895 1.672230e-119
+## 10      K80+I 131 -3632.974 7527.949  5.683754e-40 7587.168  1.444927e-38
+## 11   K80+G(4) 131 -3612.482 7486.963  4.514052e-31 7546.182  1.147565e-29
+## 12 K80+G(4)+I 132 -3610.487 7484.973  1.220958e-30 7545.199  1.875826e-29
+## 13        K81 131 -3817.781 7897.563 3.118544e-120 7956.782 7.927978e-119
+## 14      K81+I 132 -3629.460 7522.921  7.022650e-39 7583.147  1.078929e-37
+## 15   K81+G(4) 132 -3609.265 7482.530  4.142046e-30 7542.756  6.363657e-29
+## 16 K81+G(4)+I 133 -3607.078 7480.156  1.357170e-29 7541.400  1.253612e-28
+## 17        TVM 136 -3764.142 7800.284  4.147439e-99 7864.643  8.069383e-99
+## 18      TVM+I 137 -3556.091 7386.182  3.457865e-09 7451.601  3.961073e-09
+## 19   TVM+G(4) 137 -3536.975 7347.949  6.934002e-01 7413.368  7.943076e-01
+## 20 TVM+G(4)+I 138 -3536.791 7349.582  3.065998e-01 7416.070  2.056924e-01
+##         BIC  DELTAAICc
+## 1  8765.383 819.245735
+## 2  8425.499 475.774697
+## 3  8393.459 443.734893
+## 4  8397.114 443.813194
+## 5  8707.893 751.025828
+## 6  8356.467 396.043648
+## 7  8321.376 360.952302
+## 8  8325.301 361.331596
+## 9  8496.251 546.526367
+## 10 8127.101 173.799780
+## 11 8086.115 132.814083
+## 12 8088.699 131.831268
+## 13 8496.715 543.413887
+## 14 8126.646 169.778790
+## 15 8086.256 129.388160
+## 16 8088.456 128.032138
+## 17 8422.305 451.275125
+## 18 8012.777  38.232933
+## 19 7974.544   0.000000
+## 20 7980.749   2.702178
+# TVM+G(4) Transversion model, AG=CT and unequal base freq was the best model deduced . For our purposes the transversion(TV) model will be used as it is available in the list of models when creating a distance matrix
+#for our analysis KY+G(4) will be used
+chosen.model <- "TV"
+#Defining what method we want to use for clustering. with pairwise deleting to maximize our data analysis. Complete will delete all cases with missing data
+clustering.method <- "single"
+distanceMatrix <- dist.dna(dnaBin.COI_status, model = chosen.model, as.matrix = TRUE, pairwise.deletion = TRUE)
+#Clustering with our defined settings
+distanceMatrix=as.dist(distanceMatrix)
+clusters.COI_status<-hclust(distanceMatrix,method=clustering.method)
+
+##Checking lambda parameter for life history trait
+#creating a ph object so it can be used with fit.discrete
+tree<-as.phylo(clusters.COI_status)
+#assigning row name as specie name so traits can be aligned with them later
+row.names(COI_status)<-(COI_status$specie_name)
+#aligning traits according to our tree
+lambda_strategy<-COI_status$valueAcr
+names(lambda_strategy)<-rownames(COI_status)
+#determining phylogenetic conservatism
+lambda_strategy<-fitDiscrete(phy = tree, dat = lambda_strategy, transform= "lambda")
+lambda_strategy
+## GEIGER-fitted comparative model of discrete data
+##  fitted Q matrix:
+##                  C           G          ST           W
+##     C  -0.10541867  0.03513956  0.03513956  0.03513956
+##     G   0.03513956 -0.10541867  0.03513956  0.03513956
+##     ST  0.03513956  0.03513956 -0.10541867  0.03513956
+##     W   0.03513956  0.03513956  0.03513956 -0.10541867
+## 
+##  fitted 'lambda' model parameter:
+##  lambda = 0.951301
+## 
+##  model summary:
+##  log-likelihood = -44.981094
+##  AIC = 93.962189
+##  AICc = 94.152665
+##  free parameters = 2
+## 
+## Convergence diagnostics:
+##  optimization iterations = 100
+##  failed iterations = 58
+##  number of iterations with same best fit = NA
+##  frequency of best fit = NA
+## 
+##  object summary:
+##  'lik' -- likelihood function
+##  'bnd' -- bounds for likelihood search
+##  'res' -- optimization iteration summary
+##  'opt' -- maximum likelihood parameter estimates
+#lambda value of closer to 1 indicates phylogenetic conservatism
+
+
+##Checking lambda parameter for IUCN status using the same steps as above
+lambda_IUCN<-COI_status$Red_List_Acr
+names(lambda_IUCN)<-rownames(COI_status)
+lambda_IUCN<-fitDiscrete(phy = tree, dat = lambda_IUCN, transform= "lambda")
+lambda_IUCN
+## GEIGER-fitted comparative model of discrete data
+##  fitted Q matrix:
+##                 CR          LC          NT          VU
+##     CR -0.03119316  0.01039772  0.01039772  0.01039772
+##     LC  0.01039772 -0.03119316  0.01039772  0.01039772
+##     NT  0.01039772  0.01039772 -0.03119316  0.01039772
+##     VU  0.01039772  0.01039772  0.01039772 -0.03119316
+## 
+##  fitted 'lambda' model parameter:
+##  lambda = 0.000000
+## 
+##  model summary:
+##  log-likelihood = -80.872999
+##  AIC = 165.745999
+##  AICc = 165.936475
+##  free parameters = 2
+## 
+## Convergence diagnostics:
+##  optimization iterations = 100
+##  failed iterations = 48
+##  number of iterations with same best fit = NA
+##  frequency of best fit = NA
+## 
+##  object summary:
+##  'lik' -- likelihood function
+##  'bnd' -- bounds for likelihood search
+##  'res' -- optimization iteration summary
+##  'opt' -- maximum likelihood parameter estimates
+#lambda value of 0 indicates no phylogenetic conservatism
+
+
+###Checking to see if there is a relationship between IUCN red list status and life history trait
+chisq.test(table(COI_status$Red_List_Acr,COI_status$valueAcr))
+## 
+##  Pearson's Chi-squared test
+## 
+## data:  table(COI_status$Red_List_Acr, COI_status$valueAcr)
+## X-squared = 8.3865, df = 9, p-value = 0.4957
+#p value of 0.4975 indicating that it is unlikely that there is any relationship between life history trait and red list status
+6.Quality of Visualizations
+dendogram<-as.dendrogram(clusters.COI_status)
+
+#Making dendrogram
+dendogram<-hang.dendrogram(dendogram,hang_height=2)
+colors_to_use <- as.numeric(COI_status[,6])
+# sort them based on their order in dend:
+colors_to_use <- colors_to_use[order.dendrogram(dendogram)]
+labels_colors(dendogram) <- colors_to_use
+
+
+dendogram <- dendogram %>% set("labels_cex",0.7) %>% 
+  set("labels_colors", colors_to_use)
+labels(dendogram) <- paste(as.character(COI_status[,4])[order.dendrogram(dendogram)], "(",labels(dendogram, 0.2),")", sep = "")
+
+# And plot:
+#bottom, left, top, and right. The default is c(5.1, 4.1, 4.1, 2.1).
+par(mar = c(5.1, 4.1, 4.1, 15))
+plot(dendogram, 
+     main = "Fig 4: Evolutionary similiarity of Scleractinia", horiz=T, nodePar = list(cex = .007))
+
+legend("topleft", title="Red List Category",
+       c("Not threatened","Least concern","Critically Endangered", "Vulnerable"), fill= c("green", "red", "black", "sky blue"), cex=0.8, box.lty=0)
+ 
+#Figure 4.Dendrogram represents evolutionary similarly between stony coral species, the colored labels represent red list status each of not threatened, least concern, critically endangered and vulnerable. Labels represent species and their life history traits, ST=stress tolerant, G=Generalist, C=Competitive, W=weedy.
+7. Results and Discussion
+#In our exploratory question it was asked whether single linkage clustering technique can be used to observe evolutionary similarity between stony coral species in a dendrogram, and whether this relates to their status on the IUCN red list and life history traits. Lastly it was questioned whether there is any relationship between conservation status and life history traits. It was predicted that evolutionarily similar species employed the same life history traits and therefore their red list status would be the same. For example, since most Acropora species on figure 4 are competitive in their life history status they would be efficient at using resources and occupying productive environments and therefore unlikely near extinction (Darling et al.,2013). It was also predicted the there would be a relationship between life history strategy used by the coral and their status on the red list. For our study, single linkage clustering was chosen as it considers distance between clusters as the minimum distance between members of the two clusters and does not break large clusters unlike complete linkage. This was done with pairwise deletion to maximize the data available for clustering, otherwise all sites with missing data are deleted if there is one missing case. Figure 4 was generated using the transversion model, this was determined through model testing which generated Akaike information criterion (AICc) values, with smaller the AICc values indicating a better model fit(Brewer et al., 2016). For our purpose 6 models were tested based on what is available in the modeltest and dist.dna functions. This consisted of JC”, “F81”, “K80”, “K81”, “TIM”, “TVM”. The lowest delta AICc value obtained was for model TVM+G(4), however since dist.dna only had TV model it was used to create our distance matrix. At a first glance there is no observable trend between species, their life history traits and their status on the red list category, however it can be observed that similar species have been clustered together such is Acropora, Porites and Pocillopora indicating that our model and method choices are likely accurate. To determine whether there is a trend between IUCN red list status, life history strategy and evolution of speices, Pagels lambda parameter was calculated. A value of 0 was obtained for red list status indicating that there is no phylogenetic signal, and the status of species evolved independantly of phylogeny also indicating that evolutionarily similar species are not at the same risk for extinction. A value of 0.951300 was obtained for life history strategy of corals indicating phylogenetic conservatism. This indicates that similar species employ similar life history traits to combat anthropogenic impacts. A chi squared test was conducted to determine whether there was a relationship between coral life history strategy and red list status, a p value of 0.4975 indicates that this is unlikely. Overall, from our predictions, only phylogenetic signal between life history traits was observed.This is unlike what was observed in literature.Evolutionarily similar species tend to have the same life history traits this can be seen by a study conducted by Darling et al, 2013. These results are likely due to a smaller sample size of our data set.
+#There are few caveats to this study, from figure 2 and 3 we can see that are data set was unbalanced in both red list category and life history strategy. Specifically, our data contained most entries with the status “least concern” and least entries for vulnerable and critically endangered which means that our results will be skewed to towards these statuses. we also had more entries for competitive and stress tolerant species and only 1 generalist species. However due to limited time and resources this could not be addressed, going forward additional data should be considered to remediate these problems. In addition, some arbitrary decesions were made going into the analysis such as single linkage and pairwise deletion clustering, due to limited time we do not know how other clustering methods will change our results and therefore this should be taken into consideration.
+#Our results, although interesting did not reveal what was initially expected, going forward similar analysis should be conducted on a larger dataset to reveal true trends. Using a more balanced data set for species, red list status and life history strategy may reveal additional trends. Dendrograms should be checked with various methods such as complete or average linkage and with or without pairwise deletion to see if results differ from our intial study. Our results did not reveal any stony coral species that were evolutionarily similar and also at the risk of extinction nor did it reveal a relationship between life history strategy and red list status. However there was phylogenetic conservatism observed in life history traits which can be explored further to deduce its importance in combatting anthropogenic events and global warming. In addition, a similar study can be conducted on a different species such as soft corals to compare trends.
+#There is a plethora of things that were gained from this course. Fundamentals in bioinformatics being a primary one, the tools learned in this course will be crucial in all areas of my career and coursework. This includes scripts, knowledge on available databases as well as slides. This course has taught me how to efficiently acquire data from a database without having to download it as a csv or tsv file but rather calling its api such as in NCBI and BOLD. It has taught to check for outliers before directly going into the analysis portion of my code as well as the importance of vingettes. Sometimes R documentation can be unclear so building upon vingettes is crucial for coding in R. I also learned the art of time management from the course, having to do assignments on top of job as well as work from other courses taught me to efficiently schedule hours of my day so everything is completed on time. It also taught me to use new packages, some that I was completely unaware of coming into this course. I took a biostatistics course so I was familiar with the common packages such as ggplot or tidyverse however for extensive analysis, which will be required further in my field, it is important to delve into new packages and learn to do things efficiently.
+###9. References #Darling, E. S., Alvarez-Filip, L., Oliver, T. A., McClanahan, T. R., Côté, I. M., & Bellwood, D. (2012). Evaluating life-history strategies of reef corals from species traits. Ecology letters, 15(12), 1378–1386. https://doi.org/10.1111/j.1461-0248.2012.01861.x #Dishon, G., Grossowicz, M., Krom, M., Guy, G., Gruber, D. F., & Tchernov, D. (2020). Evolutionary traits that enable scleractinian corals to survive mass extinction events. Scientific Reports, 10(1). https://doi.org/10.1038/s41598-020-60605-2 # Raharinirina, N. A., Brandt, G., & Merico, A. (2017). A trait-based model for describing the adaptive dynamics of coral-algae symbiosis. Frontiers in Ecology and Evolution, 5. https://doi.org/10.3389/fevo.2017.00031 # Budd, A. F., Romano, S. L., Smith, N. D., & Barbeitos, M. S. (2010). Rethinking the phylogeny of Scleractinian Corals: A review of morphological and Molecular Data. Integrative and Comparative Biology, 50(3), 411–427. https://doi.org/10.1093/icb/icq062 # Kamilar, J. M., & Cooper, N. (2013). Phylogenetic signal in primate behaviour, ecology and life history. Philosophical transactions of the Royal Society of London. Series B, Biological sciences, 368(1618), 20120341. https://doi.org/10.1098/rstb.2012.0341
+#Packages, databases, websites and Vignettes #Coral Traits. (n.d.). Retrieved December 16, 2022, from https://coraltraits.org/traits ##IUCN red list of threatened species. (n.d.). Retrieved December 13, 2022, from https://www.iucnredlist.org/search?query=Corals&searchType=species #Paradis E, Schliep K (2019). “ape 5.0: an environment for modern phylogenetics and evolutionary analyses in R.” Bioinformatics, 35, 526-528. #Schliep, Klaus, Potts, J. A, Morrison, A. D, Grimm, W. G (2017). “Intertwining phylogenetic trees and networks.” Methods in Ecology and Evolution, 8(10), 1212–1220. # Edgar, R. C (2004). “MUSCLE: multiple sequence alignment with high accuracy and high throughput.” Nucleic Acids Res, 32, 1792-1797. doi: 10.1093/nar/gkh340. # Galili, T (2015). “dendextend: an R package for visualizing, adjusting, and comparing trees of hierarchical clustering.” Bioinformatics. doi:10.1093/bioinformatics/btv428, https://academic.oup.com/bioinformatics # Clustering. Hierarchical Clustering · Clustering. (n.d.). Retrieved December 16, 2022, from https://juliastats.org/Clustering.jl/stable/hclust.html #Pennell M, Eastman J, Slater G, Brown J, Uyeda J, Fitzjohn R, Alfaro M, Harmon L (2014). “geiger v2.0: an expanded suite of methods for fitting macroevolutionary models to phylogenetic trees.” Bioinformatics, 30, 2216-2218. #Galili, T. (2022, July 4). Hierarchical cluster analysis on famous data sets - enhanced with the dendextend package. Retrieved December 16, 2022, from https://cran.r-project.org/web/packages/dendextend/vignettes/Cluster_Analysis.html #Hclustering_Bugs. RPubs. (n.d.). Retrieved December 16, 2022, from https://rpubs.com/JTK/hclust-color #Galili, T. (1962, August 1). How to color a dendrogram’s labels according to defined groups? (in R). Stack Overflow. Retrieved December 16, 2022, from https://stackoverflow.com/questions/31117849/how-to-color-a-dendrograms-labels-according-to-defined-groups-in-r #Schliep, K. (2022, September 17). Estimating phylogenetic trees with Phangorn. Retrieved December 16, 2022, from https://cran.r-project.org/web/packages/phangorn/vignettes/Trees.html #Mazerolle,M.(2020) Comprehensive R Archive Network (CRAN). (n.d.). Package aiccmodavg. CRAN. Retrieved December 16, 2022, from https://cran.r-project.org/web/packages/AICcmodavg/
